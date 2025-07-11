@@ -1,0 +1,332 @@
+import java.util.*;
+import java_cup.runtime.Symbol;
+import com.kdudek.rdl.ast.*;
+
+parser code {:
+:};
+
+action code {:
+private static <T> List<T>  list(T  x           ){ return List.of(x); }
+private static <T> List<T>  list()              { return List.of();   }
+private static <T> List<T>  cat (T h, List<T> t ){
+    var l = new ArrayList<T>(1+t.size()); l.add(h); l.addAll(t); return l;
+}
+private static String unq(String q){ return q.replace("\"",""); }
+
+private Endpoint buildEp(HttpVerb v, List<String> paths,
+                         List<Annotation> ann,
+                         List<Param> params,
+                         Object[] tail){
+    List<Object> raw = (List<Object>) tail[0];
+    List<Modifier> mods = raw.stream()
+                             .filter(m -> m instanceof Modifier)
+                             .map(m -> (Modifier)m)
+                             .toList();
+    TypeRef ret = (TypeRef) tail[1];
+    return new Endpoint(v,paths,ann,params,mods,ret,false);
+}
+
+private TypeRef mergeType(String base, Object suf){
+    if(suf==null) return new TypeRef.Simple(base);
+    if("[]".equals(suf))
+        return new TypeRef.Array(new TypeRef.Simple(base));
+    if(suf instanceof List<?> g)
+        return new TypeRef.Generic(new TypeRef.Simple(base),(List<TypeRef>)g);
+    throw new RuntimeException("bad suffix");
+}
+:};
+
+terminal PACKAGE, IMPORT,
+         TRAIT, RESOURCE, USES, OVERRIDE, EXTENDS,
+         GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS,
+         EXPECTS, RETURNS, STATUS,
+         SECURE, TRANSACTIONAL,
+         VOID;
+
+terminal AT;
+
+terminal LBRACE, RBRACE,
+         LPAREN, RPAREN,
+         LBRACKET, RBRACKET,
+         LT, GT,
+         COMMA, COLON,
+         SEMICOLON,
+         DOT, QUESTION, EQUAL;
+
+terminal String JAVA_DOC;
+terminal String PATH_LITERAL;
+terminal String STRING_LITERAL;
+terminal String IDENTIFIER;
+terminal Integer INT_LITERAL;
+
+non terminal Object                DeclList;
+non terminal CompilationUnit       CompilationUnit;
+non terminal String                Package, QualifiedName, NameTail;
+non terminal String                Import, GenericParam;
+non terminal List<String>          ImportList, GenericParams,
+                                   GenericParamSeq, PathSeq;
+non terminal List<Trait>           TraitList;
+non terminal Trait                 TraitDecl;
+non terminal List<TraitMember>     TraitMembers;
+non terminal TraitMember           TraitMember;
+non terminal List<Resource>        ResourceList;
+non terminal Resource              ResourceDecl;
+non terminal String                Doc;
+non terminal List<Annotation>      AnnotationBlock;
+non terminal Annotation            Annotation;
+non terminal Map<String,Literal>   MaybeAnnotationArgs,
+                                   AnnotationArgSeq, AnnotationArg;
+non terminal List<Param>           MaybeParams, ParamSeq;
+non terminal Param                 Param;
+non terminal List<RcContent>       ResourceBody, ResourceContentSeq;
+non terminal RcContent             ResourceContent;
+non terminal TraitUse              TraitUse;
+non terminal List<TypeRef>         MaybeGenericArgs, GenericArgSeq;
+non terminal Endpoint              EndpointDecl;
+non terminal HttpVerb              HTTPVerb;
+non terminal Object              EndpointTail;
+non terminal List<Object>          ModifierPlus;
+non terminal Object                Modifier;
+non terminal TypeRef               ReturnsOpt, TypeRef, TypeArg,
+                                   MaybeBound, Wildcard;
+non terminal List<TypeRef>         GenericArgs, TypeArgSeq;
+non terminal Object                TypeSuffix;
+non terminal String                ArraySuffix;
+non terminal Literal               Literal;
+
+start with CompilationUnit;
+
+CompilationUnit ::=
+        DeclList:d
+        {: List<Trait> tl = (List<Trait>) ((Object[])d)[0];
+           List<Resource> rl = (List<Resource>) ((Object[])d)[1];
+           RESULT = new CompilationUnit(null, List.of(), tl, rl); :}
+      | Package:p DeclList:d
+        {: List<Trait> tl = (List<Trait>) ((Object[])d)[0];
+           List<Resource> rl = (List<Resource>) ((Object[])d)[1];
+           RESULT = new CompilationUnit(p, List.of(), tl, rl); :}
+      | ImportList:i DeclList:d
+        {: List<Trait> tl = (List<Trait>) ((Object[])d)[0];
+           List<Resource> rl = (List<Resource>) ((Object[])d)[1];
+           RESULT = new CompilationUnit(null, i, tl, rl); :}
+      | Package:p ImportList:i DeclList:d
+        {: List<Trait> tl = (List<Trait>) ((Object[])d)[0];
+           List<Resource> rl = (List<Resource>) ((Object[])d)[1];
+           RESULT = new CompilationUnit(p, i, tl, rl); :}
+        ;
+
+Package ::= PACKAGE QualifiedName:q SEMICOLON {: RESULT = q; :};
+
+ImportList ::=
+        Import:i                   {: RESULT = list(i); :}
+      | Import:i ImportList:rest   {: RESULT = cat(i, rest); :}
+      ;
+
+Import     ::= IMPORT QualifiedName:q SEMICOLON {: RESULT = q; :};
+
+QualifiedName ::=
+        IDENTIFIER:id                         {: RESULT = id; :}
+      | IDENTIFIER:id NameTail:t              {: RESULT = id+t; :}
+      ;
+
+NameTail ::=
+        DOT IDENTIFIER:id                     {: RESULT = "."+id; :}
+      | DOT IDENTIFIER:id NameTail:rest       {: RESULT = "."+id+rest; :}
+      ;
+
+DeclList ::=
+        TraitList:t                      {: RESULT = new Object[]{t, list()}; :}
+      | ResourceList:r                   {: RESULT = new Object[]{list(), r}; :}
+      | TraitList:t ResourceList:r       {: RESULT = new Object[]{t, r}; :}
+      ;
+
+TraitList ::=
+        TraitDecl:t                      {: RESULT = list(t); :}
+      | TraitDecl:t TraitList:tail       {: RESULT = cat(t,tail); :}
+      ;
+
+TraitDecl ::=
+        Doc:d TRAIT IDENTIFIER:id GenericParams:g LBRACE TraitMembers:m RBRACE
+        {:
+          List<Endpoint> eps = m.stream().map(TraitMember::ep).toList();
+          RESULT = new Trait(id, g, m, d);
+        :}
+      | TRAIT IDENTIFIER:id GenericParams:g LBRACE TraitMembers:m RBRACE
+        {:
+          List<Endpoint> eps = m.stream().map(TraitMember::ep).toList();
+          RESULT = new Trait(id, g, m, null);
+        :}
+      ;
+
+Doc ::= JAVA_DOC:j {: RESULT = j; :};
+
+GenericParams ::= /* ε */ {: RESULT=list(); :}
+      | LT GenericParamSeq:g GT {: RESULT=g; :}
+      ;
+
+GenericParamSeq ::=
+        GenericParam:p                     {: RESULT=list(p); :}
+      | GenericParam:p COMMA GenericParamSeq:rest {: RESULT=cat(p,rest); :}
+      ;
+
+GenericParam ::= IDENTIFIER:id {: RESULT=id; :};
+
+TraitMembers ::=
+        TraitMember:m                   {: RESULT=list(m); :}
+      | TraitMember:m TraitMembers:rest {: RESULT=cat(m,rest); :}
+      ;
+
+TraitMember ::=
+        EndpointDecl:e            {: RESULT = new TraitMember(false,e); :}
+      | OVERRIDE EndpointDecl:e   {: RESULT = new TraitMember(true ,e); :}
+      ;
+
+ResourceList ::=
+        ResourceDecl:r                 {: RESULT=list(r); :}
+      | ResourceDecl:r ResourceList:l  {: RESULT=cat(r,l); :}
+      ;
+
+ResourceDecl ::=
+        RESOURCE PATH_LITERAL:p MaybeParams:mp ResourceBody:b
+        {: RESULT = new Resource(unq(p), list(), mp, b); :}
+      | AnnotationBlock:a RESOURCE PATH_LITERAL:p MaybeParams:mp ResourceBody:b
+        {: RESULT = new Resource(unq(p), a, mp, b); :}
+      | Doc:d RESOURCE PATH_LITERAL:p MaybeParams:mp ResourceBody:b
+        {: RESULT = new Resource(unq(p), list(), mp, b); :}
+      | Doc RESOURCE PATH_LITERAL:p MaybeParams:mp ResourceBody:b
+        AnnotationBlock:a
+        {: RESULT = new Resource(unq(p), a, mp, b); :}
+        ;
+
+AnnotationBlock ::=
+        Annotation:a                      {: RESULT=list(a); :}
+      | Annotation:a AnnotationBlock:rest {: RESULT=cat(a,rest); :}
+      ;
+
+Annotation ::=
+        AT IDENTIFIER:id MaybeAnnotationArgs:args
+        {: RESULT = new Annotation(id,args); :}
+      ;
+
+MaybeAnnotationArgs ::= /* ε */ {: RESULT = Map.of(); :}
+      | LPAREN AnnotationArgSeq:seq RPAREN {: RESULT=seq; :};
+
+AnnotationArgSeq ::=
+        AnnotationArg:a                        {: RESULT=a; :}
+      | AnnotationArg:a COMMA AnnotationArgSeq:rest
+        {: var m=new LinkedHashMap<String,Literal>(a); m.putAll(rest); RESULT=m; :}
+      ;
+
+AnnotationArg ::= IDENTIFIER:k EQUAL Literal:v {: RESULT = Map.of(k,v); :}
+      | Literal:v                              {: RESULT = Map.of("",v); :}
+      ;
+
+Literal ::= STRING_LITERAL:s {: RESULT = new Literal.StringLit(unq(s)); :}
+      | INT_LITERAL:i         {: RESULT = new Literal.IntLit(i);      :}
+      ;
+
+MaybeParams ::= /* ε */ {: RESULT=list(); :}
+      | LPAREN ParamSeq:p RPAREN {: RESULT=p; :};
+
+ParamSeq ::=
+        Param:p                 {: RESULT=list(p); :}
+      | Param:p COMMA ParamSeq:l{: RESULT=cat(p,l); :}
+      ;
+
+Param ::= IDENTIFIER:id COLON TypeRef:t           {: RESULT = new Param(id,t,false); :}
+      | IDENTIFIER:id QUESTION COLON TypeRef:t    {: RESULT = new Param(id,t,true);  :}
+      ;
+
+ResourceBody ::= LBRACE ResourceContentSeq:c RBRACE {: RESULT=c; :};
+
+ResourceContentSeq ::=
+        ResourceContent:c                  {: RESULT=list(c); :}
+      | ResourceContent:c ResourceContentSeq:rest {: RESULT=cat(c,rest); :}
+      ;
+
+ResourceContent ::= EndpointDecl:e {: RESULT=e; :}
+      | ResourceDecl:r              {: RESULT=r; :}
+      | TraitUse:u                  {: RESULT=u; :}
+      ;
+
+TraitUse ::= USES IDENTIFIER:n MaybeGenericArgs:g {: RESULT = new TraitUse(n,g); :};
+
+MaybeGenericArgs ::= /* ε */ {: RESULT=list(); :}
+      | LT GenericArgSeq:ga GT {: RESULT=ga; :}
+      ;
+
+GenericArgSeq ::=
+        TypeRef:t                       {: RESULT=list(t); :}
+      | TypeRef:t COMMA GenericArgSeq:l {: RESULT=cat(t,l); :}
+      ;
+
+EndpointDecl ::=
+        AnnotationBlock:a HTTPVerb:v PathSeq:ps MaybeParams:p EndpointTail:t
+        {: RESULT = buildEp(v, ps, a, p, (Object[])t); :}
+      | HTTPVerb:v PathSeq:ps MaybeParams:p EndpointTail:t
+        {: RESULT = buildEp(v, ps, list(), p, (Object[])t); :}
+      ;
+
+HTTPVerb ::=
+        GET      {: RESULT = HttpVerb.GET;     :}
+      | POST     {: RESULT = HttpVerb.POST;    :}
+      | PUT      {: RESULT = HttpVerb.PUT;     :}
+      | PATCH    {: RESULT = HttpVerb.PATCH;   :}
+      | DELETE   {: RESULT = HttpVerb.DELETE;  :}
+      | HEAD     {: RESULT = HttpVerb.HEAD;    :}
+      | OPTIONS  {: RESULT = HttpVerb.OPTIONS; :}
+      ;
+
+PathSeq ::=
+        PATH_LITERAL:p                     {: RESULT=list(unq(p)); :}
+      | PathSeq:ps COMMA PATH_LITERAL:p    {: RESULT=cat(unq(p),ps); :}
+      ;
+
+EndpointTail ::=
+        ModifierPlus:m ReturnsOpt:r {: RESULT=new Object[]{m,r}; :}
+      | ReturnsOpt:r               {: RESULT=new Object[]{list(),r}; :}
+      ;
+
+ModifierPlus ::=
+        Modifier:m                       {: RESULT=list(m); :}
+      | Modifier:m ModifierPlus:l        {: RESULT=cat(m,l); :}
+      ;
+
+Modifier ::=
+        EXPECTS TypeRef:t                {: RESULT=new Modifier.Expects(t); :}
+      | STATUS INT_LITERAL:i             {: RESULT=new Modifier.Status(i); :}
+      | SECURE LPAREN STRING_LITERAL:s RPAREN {: RESULT=new Modifier.Secure(unq(s)); :}
+      | TRANSACTIONAL                    {: RESULT=new Modifier.Tx(); :}
+      | Annotation:a                     {: RESULT=a; :}
+      ;
+
+ReturnsOpt ::= /* ε */ {: RESULT=null; :}
+      | RETURNS TypeRef:t            {: RESULT=t; :}
+      | RETURNS VOID                 {: RESULT=null; :}
+      ;
+
+TypeRef ::= QualifiedName:n TypeSuffix:s {: RESULT = mergeType(n, s); :};
+
+TypeSuffix ::= /* ε */ {: RESULT=null; :}
+      | ArraySuffix:a         {: RESULT=a; :}
+      | GenericArgs:g         {: RESULT=g; :}
+      ;
+
+ArraySuffix ::= LBRACKET RBRACKET {: RESULT="[]"; :};
+
+GenericArgs ::= LT TypeArgSeq:ta GT {: RESULT=ta; :};
+
+TypeArgSeq ::=
+        TypeArg:a                    {: RESULT=list(a); :}
+      | TypeArg:a COMMA TypeArgSeq:l {: RESULT=cat(a,l); :}
+      ;
+
+TypeArg ::= TypeRef:t {: RESULT=t; :}
+      | Wildcard:w    {: RESULT=w; :}
+      ;
+
+Wildcard ::= QUESTION MaybeBound:b {: RESULT=new TypeRef.Wild(b,true); :};
+
+MaybeBound ::= /* ε */ {: RESULT=null; :}
+      | EXTENDS TypeRef:t {: RESULT=t; :}
+      ;
