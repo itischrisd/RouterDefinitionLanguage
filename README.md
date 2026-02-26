@@ -2,7 +2,7 @@
   <div>
     <img width="80" src="https://raw.githubusercontent.com/itischrisd/itis-PJATK/main/logo.svg" alt="PJAIT logo" />
   </div>
-  Router Definition Language
+  RouterDefinitionLanguage
 </h1>
 
 Repository that contains final project implementation for AUG (Automata and Grammars) practical classes, taught by
