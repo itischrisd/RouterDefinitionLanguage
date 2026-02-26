@@ -1,12 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.kdudek</groupId>
-    <artifactId>RDL</artifactId>
+    <artifactId>router-definition-language</artifactId>
     <version>1.0-SNAPSHOT</version>
+
+    <name>RouterDefinitionLanguage</name>
+    <description>RouterDefinitionLanguage</description>
+    <url/>
+    <licenses>
+        <license/>
+    </licenses>
+
+    <developers>
+        <developer/>
+    </developers>
+
+    <scm>
+        <connection/>
+        <developerConnection/>
+        <tag/>
+        <url/>
+    </scm>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -38,7 +55,9 @@
                     <execution>
                         <id>generate-lexer</id>
                         <phase>generate-sources</phase>
-                        <goals><goal>generate</goal></goals>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
                         <configuration>
                             <lexDefinitions>
                                 <lexDefinition>${project.basedir}/src/main/flex</lexDefinition>
@@ -57,7 +76,9 @@
                     <execution>
                         <id>generate-parser</id>
                         <phase>generate-sources</phase>
-                        <goals><goal>generate</goal></goals>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
                         <configuration>
                             <cupDefinition>${project.basedir}/src/main/cup/RdlParser.cup</cupDefinition>
                             <outputDirectory>${project.basedir}/src/main/java/</outputDirectory>
@@ -75,7 +96,9 @@
                     <execution>
                         <id>add-sources</id>
                         <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
                         <configuration>
                             <sources>
                                 <source>${project.build.directory}/generated-sources/jflex</source>
